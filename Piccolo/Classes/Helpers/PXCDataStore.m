@@ -1,36 +1,52 @@
 //
-//  PXCDataStore.m
-//  Piccolo
+// PXCDataStore.m
 //
-//  Created by Matthias Eder on 4/22/13.
-//  Copyright (c) 2013 Matthias Eder. All rights reserved.
+// Copyright (c) 2013 Matthias Eder
 //
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
 
 #import "PXCDataStore.h"
 #import <AWSS3/AWSS3.h>
 
 
+// Using a hardcoded AWS region for now.  In the future, this should probably be
+// made configurable.
 #define S3_REGION [S3Region USWest2]
 
 @interface PXCDataStore ( )
 {
     @private
-    AmazonS3Client *s3;
-    NSString *accessKey;
-    NSString *secret;
-    NSString *channelName;
-    NSString *bucketName;
+    AmazonS3Client *s3;     // the Amazon S3 client
+    NSString *accessKey;    // AWS access key
+    NSString *secret;       // AWS secret
+    NSString *channelName;  // name of the subscribed channel
+    NSString *bucketName;   // S3 bucket name, which is a combination of channelName
+                            // and access key
 }
 @end
 
 
 @implementation PXCDataStore
 
-
 static PXCDataStore *_sharedClient = nil;
 
-+(PXCDataStore *)sharedClient
-{
++(PXCDataStore *)sharedClient {
     static dispatch_once_t once;    
     dispatch_once(&once, ^{
         _sharedClient = [[[self class] alloc] init];
@@ -39,17 +55,15 @@ static PXCDataStore *_sharedClient = nil;
 }
 
 
-+(void)reconnect
-{
-    NSLog(@"Reconnecting to datastore.");
++(void)reconnect {
     _sharedClient = [[[self class] alloc] init];
 }
 
 
--(id)init
-{
+// Initializes the shared instance with the AWS properties stored in the standard user
+// preferences and the AWS availablity zone specified in the header file.
+-(id)init {
     self = [super init];
-    
     if (self) {        
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
         accessKey = [defaults objectForKey:@"aws_access_key"];
@@ -64,8 +78,7 @@ static PXCDataStore *_sharedClient = nil;
 }
 
 
--(void)createBucket:(void (^)(NSError *))block
-{
+-(void)createBucket:(void (^)(NSError *))block {
     dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
     dispatch_async(queue, ^{
         NSError *error;
@@ -93,11 +106,9 @@ static PXCDataStore *_sharedClient = nil;
 }
 
 
--(void)listObjects:(void (^)(NSArray *, NSError *))block
-{
+-(void)listObjects:(void (^)(NSArray *, NSError *))block {
     dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
     dispatch_async(queue, ^{
-        
         NSMutableArray *results = nil;
         S3ListObjectsRequest *req = [[S3ListObjectsRequest alloc] initWithName:bucketName];
         req.marker = nil;
@@ -133,11 +144,11 @@ static PXCDataStore *_sharedClient = nil;
 }
 
 
--(void)getObject:(NSString *)key withBlock:(void (^)(NSData *, NSError *))block
+-(void)getObject:(NSString *)key
+       withBlock:(void (^)(NSData *, NSError *))block
 {
     dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
-    dispatch_async(queue, ^{
-        
+    dispatch_async(queue, ^{        
         NSData *data = nil;
         S3GetObjectRequest *req = [[S3GetObjectRequest alloc] initWithKey:key withBucket:bucketName];
         S3GetObjectResponse *resp = [s3 getObject:req];
@@ -149,29 +160,25 @@ static PXCDataStore *_sharedClient = nil;
         dispatch_async(dispatch_get_main_queue(), ^{
             block(data, resp.error);
         });
-                
     });
 }
 
 
--(void)writeObject:(NSData *)data ofType:(NSString *)objectType WithKey:(NSString *)key andBlock:(void (^)(NSError *))block
+-(void)writeObject:(NSData *)data
+            ofType:(NSString *)objectType
+           WithKey:(NSString *)key
+          andBlock:(void (^)(NSError *))block
 {
     dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
     dispatch_async(queue, ^{
-                
-       // If a delegate is set, the requests will not block, and the delegate must handle the response in the
-       // request:didCompleteWithResponse: method.
         S3PutObjectRequest *request = [[S3PutObjectRequest alloc] initWithKey:key inBucket:bucketName];
-        //[request setDelegate:<#(id<AmazonServiceRequestDelegate>)#>];
         request.contentType = objectType;
         request.data = data;
         
-        S3PutObjectResponse *response = [s3 putObject:request];        
-        // TODO: does this marshal back to the main thread?
+        S3PutObjectResponse *response = [s3 putObject:request];
         dispatch_async(dispatch_get_main_queue(), ^{
             block(response.error);
-        });
-        
+        });        
     });
 }
 
